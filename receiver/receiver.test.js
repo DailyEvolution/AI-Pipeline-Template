@@ -28,7 +28,7 @@ test('good signature: dispatches exactly the allowed fields', async () => {
   let sent
   const res = await handler(req(payload, sign(payload, 's3cret')), env, async (url, init) => {
     sent = { url, init }
-    return new Response('', { status: 204 })
+    return new Response(null, { status: 204 })
   })
   assert.equal(res.status, 200)
   assert.equal(sent.url, 'https://api.github.com/repos/org/repo/dispatches')
@@ -41,6 +41,6 @@ test('good signature: dispatches exactly the allowed fields', async () => {
 test('title is bounded even when Sentry sends something enormous', async () => {
   const big = JSON.stringify({ data: { issue: { id: 1, title: 'x'.repeat(10000) } } })
   let body
-  await handler(req(big, sign(big, 's3cret')), env, async (_u, init) => { body = JSON.parse(init.body); return new Response('', { status: 204 }) })
+  await handler(req(big, sign(big, 's3cret')), env, async (_u, init) => { body = JSON.parse(init.body); return new Response(null, { status: 204 }) })
   assert.equal(body.client_payload.title.length, 200)
 })

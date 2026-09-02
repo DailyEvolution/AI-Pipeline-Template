@@ -110,26 +110,28 @@ scenario tests-raise       T0 T1 "echo 'export {}' > tests/extra.test.js"
 scenario workflow-raises   T0 T1 "mkdir -p .github/workflows && echo 'name: x' > .github/workflows/x.yml"
 
 gate2() {  # name, expect(ok|fail), edit
-  local name=$1 want=$2 edit=$3
-  git -C "$TMP" checkout -q -b "g2-$name" main
+  local name=$1 want=$2 edit=$3 slug
+  slug=$(printf '%s' "$name" | tr -c 'a-z0-9' '-')
+  git -C "$TMP" checkout -q -b "g2-$slug" main
   ( cd "$TMP" && eval "$edit" )
   git -C "$TMP" add -A && git -C "$TMP" commit -qm "$name"
   MSG="tests-changed-with-src: $name"
-  if [ "$want" = ok ]; then ( cd "$TMP" && expect_ok "$ROOT/scripts/gates/tests-changed-with-src.sh" main )
-  else ( cd "$TMP" && expect_fail "$ROOT/scripts/gates/tests-changed-with-src.sh" main ); fi
+  pushd "$TMP" >/dev/null
+  if [ "$want" = ok ]; then expect_ok   "$ROOT/scripts/gates/tests-changed-with-src.sh" main
+  else                       expect_fail "$ROOT/scripts/gates/tests-changed-with-src.sh" main; fi
+  popd >/dev/null
 }
 gate2 "src and tests changed"  ok   "echo '// c' >> src/greeting.js; echo '// t' >> tests/greeting.test.js"
 gate2 "src changed, no test"   fail "echo '// c' >> src/greeting.js"
 gate2 "tests only"             ok   "echo '// t' >> tests/greeting.test.js"
 gate2 "nothing in src"         ok   "echo 'x' > README.md"
 
-# The subshell above cannot bump our counters; recount from output instead.
-# (Kept simple: the four gate2 lines print their own ✓/✗.)
-
 git -C "$TMP" checkout -q main
 echo '{}' > "$TMP/scan-report.json"; git -C "$TMP" add scan-report.json
 MSG="gate scan-provenance fails on a tracked report"
-( cd "$TMP" && touch -d '1 minute ago' .m && touch scan-report.json && expect_fail "$ROOT/scripts/gates/scan-provenance.sh" scan-report.json .m )
+pushd "$TMP" >/dev/null; touch -d '1 minute ago' .m; touch scan-report.json
+expect_fail "$ROOT/scripts/gates/scan-provenance.sh" scan-report.json .m
+popd >/dev/null
 
 # ------------------------------------------------------------ form parser
 section "Issue-form parser"
@@ -146,7 +148,7 @@ unset BODY
 
 # --------------------------------------------------------------- receiver
 section "Webhook receiver"
-if node --test receiver/ >/dev/null 2>&1; then ok "receiver: signature check, dispatch shape, title bound (node --test)"; else bad "receiver tests"; node --test receiver/ 2>&1 | tail -20; fi
+if node --test receiver/receiver.test.js >/dev/null 2>&1; then ok "receiver: signature check, dispatch shape, title bound (node --test)"; else bad "receiver tests"; node --test receiver/receiver.test.js 2>&1 | tail -20; fi
 
 # --------------------------------------------------------------- gate log
 section "Gate log"
