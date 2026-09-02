@@ -5,6 +5,7 @@ on:
 
 jobs:
   cluster:
+    if: vars.PIPELINE_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions: { issues: write, contents: read, id-token: write }
     steps:

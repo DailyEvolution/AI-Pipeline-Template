@@ -7,13 +7,16 @@ concurrency:
   group: heal-loop
   cancel-in-progress: false
 
+# Dormant until `gh variable set PIPELINE_ENABLED --body true`. Nothing
+# scheduled should fire on a repository whose secrets are not in place.
 jobs:
   breaker:
+    if: vars.PIPELINE_ENABLED == 'true'
     uses: ./.github/workflows/circuit-breaker.yml
 
   repair:
     needs: breaker
-    if: needs.breaker.outputs.state == 'closed'
+    if: vars.PIPELINE_ENABLED == 'true' && needs.breaker.outputs.state == 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

@@ -63,6 +63,16 @@ import yaml
 g=yaml.safe_load(open('.github/workflows/gates.yml'))['name']
 t=yaml.safe_load(open('.github/workflows/t0-merge.yml'))
 assert g in t[True]['workflow_run']['workflows']"
+MSG="every scheduled workflow is dormant until PIPELINE_ENABLED is set"
+expect_ok python3 - <<'PYG'
+import yaml, sys
+for f in ('.github/workflows/heal.yml', '.github/workflows/triage.yml'):
+    wf = yaml.safe_load(open(f))
+    if 'schedule' not in wf[True]: continue
+    for name, job in wf['jobs'].items():
+        if "vars.PIPELINE_ENABLED == 'true'" not in str(job.get('if', '')):
+            print(f"{f}: job {name} has no PIPELINE_ENABLED guard"); sys.exit(1)
+PYG
 MSG="every path in tier-from-paths.sh appears in docs/tiers.md"
 expect_ok bash -c "for p in migrations db src/auth src/billing openapi.yaml src/api/contracts tests .github; do grep -q \"\$p\" docs/tiers.md || exit 1; done"
 

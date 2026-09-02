@@ -53,9 +53,12 @@ repository. On the commit you are reading, it passes. What it proves:
 3. `PIPELINE_APP_ID=<id> scripts/bootstrap-repo.sh <org> <repo>`.
 4. Open a pull request by hand. Confirm `Gates / classify` and
    `Gates / verify` report, and that the PR cannot merge without them.
-5. Only then let `heal.yml` run on its schedule. Only after a T0 heal PR
-   has merged by hand once, and the ruleset log shows what you expect,
-   enable `t0-merge.yml`.
+5. Only then `gh variable set PIPELINE_ENABLED --body true`. The
+   scheduled workflows (`heal.yml`, `triage.yml`) are dormant until that
+   variable exists, so a freshly pushed repository does not produce a
+   failed run every four hours. Only after a T0 heal PR has merged by
+   hand once, and the ruleset log shows what you expect, rely on
+   `t0-merge.yml`.
 
 The runbook's phase order applies. Nothing in Phase 4 is safe until
 Phase 2's gates have failed on purpose in front of you at least once.
