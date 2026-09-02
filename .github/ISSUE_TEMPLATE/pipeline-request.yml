@@ -1,0 +1,24 @@
+name: Pipeline request
+description: A change request that may be implemented by the pipeline.
+labels: ["pipeline:improve", "tier:unclassified", "needs-sponsor"]
+body:
+  - type: input
+    id: requested_by
+    attributes:
+      label: Requested by
+      description: Who asked. May be external.
+    validations: { required: true }
+  - type: input
+    id: sponsor
+    attributes:
+      label: Internal sponsor
+      description: >
+        GitHub username of the employee accountable for this change.
+        The agent acts with this person's authority and no more.
+    validations: { required: true }
+  - type: textarea
+    id: expectation
+    attributes:
+      label: What you expected
+      description: In your own words. Not a category.
+    validations: { required: true }

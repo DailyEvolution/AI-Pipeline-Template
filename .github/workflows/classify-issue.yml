@@ -1,0 +1,16 @@
+name: Classify issue
+on:
+  issues: { types: [opened, edited] }
+
+jobs:
+  provisional:
+    if: contains(github.event.issue.labels.*.name, 'tier:unclassified')
+    runs-on: ubuntu-latest
+    permissions: { issues: write, contents: read, id-token: write }
+    steps:
+      - uses: actions/checkout@v6
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "/classify-tier ${{ github.event.issue.number }}"
+          claude_args: "--max-turns 8"

@@ -1,0 +1,105 @@
+name: Gates
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: write }
+    outputs:
+      tier: ${{ steps.decide.outputs.tier }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { fetch-depth: 0 }
+
+      # The provisional tier lives on the issue this PR closes. The PR
+      # body must say "Closes #N" for GitHub to record the link.
+      - id: linked
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          TIER=$(gh api graphql \
+            -F owner='${{ github.repository_owner }}' \
+            -F repo='${{ github.event.repository.name }}' \
+            -F pr=${{ github.event.pull_request.number }} \
+            -f query='query($owner:String!,$repo:String!,$pr:Int!){
+              repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
+                closingIssuesReferences(first:1){ nodes{
+                  labels(first:20){ nodes{ name } } } } } } }' \
+            --jq '.data.repository.pullRequest.closingIssuesReferences
+                  .nodes[0].labels.nodes[].name
+                  | select(startswith("tier:")) | ltrimstr("tier:")' | head -1)
+          echo "tier=${TIER}" >> "$GITHUB_OUTPUT"
+
+      - id: decide
+        run: |
+          TIER=$(scripts/tier-from-paths.sh \
+                   "origin/${{ github.base_ref }}" \
+                   "${{ steps.linked.outputs.tier }}")
+          echo "tier=$TIER" >> "$GITHUB_OUTPUT"
+
+      # Write it onto the PR so humans can see it. The merge workflow
+      # does not read this label; it re-derives.
+      - env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          N=${{ github.event.pull_request.number }}
+          for t in T0 T1 T2 T3 unclassified; do
+            gh pr edit "$N" --remove-label "tier:$t" 2>/dev/null || true
+          done
+          gh pr edit "$N" --add-label "tier:${{ steps.decide.outputs.tier }}"
+
+  verify:
+    needs: [classify]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+
+      # Marker for "produced during this job". Checked below.
+      - run: touch .gate-start
+
+      # Vitest syntax. Jest is `--json --outputFile=`; both emit numTotalTests.
+      - name: Tests, with a machine-readable report
+        run: npm test -- --reporter=json --outputFile=report.json
+
+      - name: "Gate: the suite ran something"
+        id: tests-executed
+        if: always()
+        run: scripts/gates/tests-executed.sh report.json
+
+      - name: "Gate: a source change arrives with a test change"
+        id: tests-changed
+        if: always()
+        run: scripts/gates/tests-changed-with-src.sh "origin/${{ github.base_ref }}"
+
+      # Your scanner here. The provenance gate does not care which one.
+      - name: Security scan
+        if: always()
+        run: npm audit --json > scan-report.json || true
+
+      - name: "Gate: the scan report is from this run"
+        id: scan-provenance
+        if: always()
+        run: scripts/gates/scan-provenance.sh scan-report.json .gate-start
+
+      # Every evaluation, pass or fail. You cannot tune a gate you only
+      # hear from when it fires.
+      - name: Record the evaluations
+        if: always()
+        run: |
+          for g in tests-executed tests-changed scan-provenance; do
+            case "$g" in
+              tests-executed)  R="${{ steps.tests-executed.outcome }}" ;;
+              tests-changed)   R="${{ steps.tests-changed.outcome }}" ;;
+              scan-provenance) R="${{ steps.scan-provenance.outcome }}" ;;
+            esac
+            scripts/gates/log.sh "$g" "$R" "${{ github.sha }}" \
+              "${{ github.event.pull_request.number }}" \
+              "${{ needs.classify.outputs.tier }}" "${{ github.actor }}"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: gate-log-${{ github.sha }}, path: gate-log.ndjson }

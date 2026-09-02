@@ -1,0 +1,38 @@
+name: Heal intake
+on:
+  repository_dispatch: { types: [sentry-alert] }
+
+jobs:
+  file:
+    runs-on: ubuntu-latest
+    permissions: { issues: write }
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          # Payload fields are untrusted; they enter via env, never inline.
+          FP:      ${{ github.event.client_payload.issue_id }}
+          TITLE:   ${{ github.event.client_payload.title }}
+          CULPRIT: ${{ github.event.client_payload.culprit }}
+          RELEASE: ${{ github.event.client_payload.release }}
+          URL:     ${{ github.event.client_payload.url }}
+          SPONSOR: ${{ vars.ONCALL_SPONSOR }}
+        run: |
+          [[ "$FP" =~ ^[0-9]+$ ]] || { echo "::error::bad fingerprint"; exit 1; }
+
+          EXISTING=$(gh issue list --label "fp:$FP" --state open \
+                       --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Seen again: $(date -u +%FT%TZ)"
+            exit 0
+          fi
+
+          gh label create "fp:$FP" --color D6D5C9 --force
+          {
+            echo "### Requested by";      echo; echo "sentry:$FP"
+            echo "### Internal sponsor";  echo; echo "@$SPONSOR"
+            echo "### Where";             echo; echo "$CULPRIT"
+            echo "### Release";           echo; echo "$RELEASE"
+            echo "### Tracker";           echo; echo "$URL"
+          } > body.md
+          gh issue create --title "[heal] $TITLE" --body-file body.md \
+            --label "pipeline:heal,tier:unclassified,fp:$FP"

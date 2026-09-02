@@ -1,0 +1,76 @@
+name: T0 merge
+on:
+  workflow_run:
+    workflows: [Gates]
+    types: [completed]
+
+concurrency: { group: t0-merge, cancel-in-progress: false }
+
+jobs:
+  merge:
+    # Same-repository branches only; workflow_run carries no PR for forks.
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.pull_requests[0] != null
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.PIPELINE_APP_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      - name: Decide, then merge or stand down
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          N: ${{ github.event.workflow_run.pull_requests[0].number }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          # "exit 0" below means "not now"; a non-zero exit is a real error.
+
+          # 1. Only agent-authored PRs. Humans merge their own.
+          AUTHOR=$(gh pr view "$N" --json author --jq '.author.login')
+          [ "$AUTHOR" = "app/claude" ] || { echo "author $AUTHOR: not an agent PR"; exit 0; }
+
+          # 2. Nobody has pulled the stop.
+          HALT=$(gh issue list --label pipeline:halt --state open --json number --jq length)
+          [ "$HALT" -eq 0 ] || { echo "pipeline:halt is set"; exit 0; }
+
+          # 3a. The issue this PR closes was judged T0. No issue, no merge.
+          PROV=$(gh api graphql -F owner="$OWNER" -F repo="$REPO" -F pr="$N" \
+            -f query='query($owner:String!,$repo:String!,$pr:Int!){
+              repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
+                closingIssuesReferences(first:1){ nodes{
+                  labels(first:20){ nodes{ name } } } } } } }' \
+            --jq '.data.repository.pullRequest.closingIssuesReferences
+                  .nodes[0].labels.nodes[].name
+                  | select(startswith("tier:")) | ltrimstr("tier:")' | head -1)
+          [ "$PROV" = "T0" ] || { echo "linked issue tier: ${PROV:-none}"; exit 0; }
+
+          # 3b. Nothing in the diff raises it. The label is not consulted.
+          BASE=$(gh pr view "$N" --json baseRefName --jq .baseRefName)
+          TIER=$(scripts/tier-from-paths.sh "origin/$BASE" "$PROV")
+          [ "$TIER" = "T0" ] || { echo "paths raise this to $TIER"; exit 0; }
+
+          # 4. Required checks green; no human has objected.
+          gh pr checks "$N" --required || { echo "required checks not green"; exit 0; }
+          DECISION=$(gh pr view "$N" --json reviewDecision --jq .reviewDecision)
+          [ "$DECISION" != "CHANGES_REQUESTED" ] || { echo "changes requested"; exit 0; }
+
+          # 5. Strict checks policy: the branch must be current. If it is
+          #    behind, update it and let Gates run again; this job re-fires.
+          STATE=$(gh pr view "$N" --json mergeStateStatus --jq .mergeStateStatus)
+          case "$STATE" in
+            BEHIND)              gh pr update-branch "$N"; echo "updated; gates re-run"; exit 0 ;;
+            DIRTY|DRAFT|UNKNOWN) echo "merge state $STATE: leaving for a human"; exit 0 ;;
+          esac
+
+          # 6. Direct merge as the pipeline app. Not --auto.
+          gh pr merge "$N" --squash --delete-branch

@@ -1,0 +1,9 @@
+# Requires human review on the machinery that judges correctness.
+/tests/                  @your-org/pipeline-owners
+/.github/                @your-org/pipeline-owners
+/.claude/                @your-org/pipeline-owners
+/CODEOWNERS              @your-org/pipeline-owners
+/docs/tiers.md           @your-org/pipeline-owners
+/scripts/                @your-org/pipeline-owners
+/rulesets/               @your-org/pipeline-owners
+/package.json            @your-org/pipeline-owners

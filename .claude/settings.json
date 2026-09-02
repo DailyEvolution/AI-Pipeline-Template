@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/.github/workflows/**)",
+      "Edit(/.claude/settings.json)",
+      "Edit(/docs/tiers.md)",
+      "Edit(/scripts/**)",
+      "Edit(/rulesets/**)",
+      "Read(/.env)"
+    ],
+    "ask": [
+      "Edit(/tests/**)"
+    ]
+  }
+}

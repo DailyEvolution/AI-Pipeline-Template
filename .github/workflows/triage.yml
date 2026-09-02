@@ -1,0 +1,25 @@
+name: Triage
+on:
+  schedule: [{ cron: "0 13 * * 1" }]   # weekly, before planning
+  workflow_dispatch:
+
+jobs:
+  cluster:
+    runs-on: ubuntu-latest
+    permissions: { issues: write, contents: read, id-token: write }
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: >
+            Read every open issue labelled `pipeline:improve` from the
+            last 30 days. Group them by the underlying need, not by
+            wording. For each group of three or more, post one summary
+            issue that links its members, states the shared need, and
+            names what the requesters actually could not do. Do not
+            propose an implementation. Do not close anything.
+          # Confirm these tool names against the action's configuration
+          # reference. A misspelt grant is a silent no-op.
+          claude_args: >
+            --max-turns 30
+            --allowedTools "mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write"

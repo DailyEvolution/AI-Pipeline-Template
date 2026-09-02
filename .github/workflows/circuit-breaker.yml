@@ -1,0 +1,30 @@
+name: Circuit breaker
+on:
+  workflow_call:
+    outputs:
+      state:
+        value: ${{ jobs.check.outputs.state }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs: { state: "${{ steps.s.outputs.state }}" }
+    steps:
+      - id: s
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          # A human can stop the loop by adding this label anywhere.
+          HALT=$(gh issue list --label "pipeline:halt" --state open \
+                 --json number --jq 'length')
+          OPEN=$(gh pr list --author "app/claude" --state open \
+                 --json number --jq 'length')
+          FAILS=$(gh pr list --author "app/claude" --state open \
+                  --json statusCheckRollup \
+                  --jq '[.[] | select(any(.statusCheckRollup[]?;
+                        .conclusion=="FAILURE"))] | length')
+
+          if [ "$HALT" -gt 0 ] || [ "$OPEN" -ge 3 ] || [ "$FAILS" -ge 2 ]; then
+            echo "state=open" >> "$GITHUB_OUTPUT"    # breaker tripped
+          else
+            echo "state=closed" >> "$GITHUB_OUTPUT"
+          fi
